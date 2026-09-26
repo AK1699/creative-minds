@@ -1,0 +1,25 @@
+{
+  "$id": "visual-bible.schema.json",
+  "title": "Visual bible",
+  "description": "context/visual-bible.json — the project's rendering constitution, derived from the configurable style preset plus story-specific palette and motifs. Every image prompt embeds this.",
+  "type": "object",
+  "required": [
+    "medium", "rendering", "palette", "paper_texture", "illustration_style",
+    "caption_typography", "aspect_ratio", "composition_rules",
+    "style_keywords", "negative_keywords", "source_preset"
+  ],
+  "properties": {
+    "medium": { "type": "string" },
+    "rendering": { "type": "string" },
+    "palette": { "type": "array", "minItems": 3, "items": { "type": "string" }, "description": "Named colours with usage notes" },
+    "paper_texture": { "type": "string" },
+    "illustration_style": { "type": "string" },
+    "caption_typography": { "type": "string" },
+    "aspect_ratio": { "type": "string" },
+    "composition_rules": { "type": "array", "items": { "type": "string" } },
+    "recurring_motifs": { "type": "array", "items": { "type": "string" }, "description": "Story-specific visual motifs to repeat across scenes" },
+    "style_keywords": { "type": "array", "minItems": 3, "items": { "type": "string" }, "description": "Keywords every image prompt must include" },
+    "negative_keywords": { "type": "array", "items": { "type": "string" }, "description": "What must never appear (e.g. speech bubbles, photorealism)" },
+    "source_preset": { "type": "string" }
+  }
+}

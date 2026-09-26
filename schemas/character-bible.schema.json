@@ -1,0 +1,28 @@
+{
+  "$id": "character-bible.schema.json",
+  "title": "Character bible",
+  "description": "context/character-bible.json — fixed visual identity of every character. Continuity is a hard requirement: scenes and prompts must reuse these attributes verbatim, never reinvent them.",
+  "type": "object",
+  "required": ["characters"],
+  "properties": {
+    "characters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "role", "age", "face", "hair", "clothing", "body"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "role": { "type": "string" },
+          "age": { "type": "string" },
+          "face": { "type": "string" },
+          "hair": { "type": "string" },
+          "clothing": { "type": "string", "description": "What they wear across the story; note any deliberate changes" },
+          "accessories": { "type": "string" },
+          "body": { "type": "string", "description": "Build, height, posture, distinctive physical characteristics" },
+          "demeanour": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -21,15 +21,18 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMAS_DIR = ROOT / "schemas"
 PROJECTS_DIR = ROOT / "projects"
 
-MAX_STAGE_ATTEMPTS = 2   # invalid-output retries per stage
-MAX_REWRITE_ROUNDS = 2   # critic-fail -> rewrite loops per project
-CLAUDE_TIMEOUT = 900     # seconds per headless stage invocation
+MAX_STAGE_ATTEMPTS = 2     # invalid-output retries per stage
+MAX_REWRITE_ROUNDS = 2     # story-critic fail -> rewrite loops per project
+MAX_SCENE_FIX_ROUNDS = 2   # scene-critic fail -> per-scene regeneration loops
+CLAUDE_TIMEOUT = 1800      # seconds per headless stage invocation
+HEARTBEAT_SECONDS = 60     # progress line printed while a stage runs
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +76,8 @@ def validate(instance, schema, path="$"):
     if isinstance(instance, (int, float)) and not isinstance(instance, bool):
         if "minimum" in schema and instance < schema["minimum"]:
             errors.append(f"{path}: {instance} below minimum {schema['minimum']}")
+        if "exclusiveMinimum" in schema and instance <= schema["exclusiveMinimum"]:
+            errors.append(f"{path}: {instance} not above {schema['exclusiveMinimum']}")
         if "maximum" in schema and instance > schema["maximum"]:
             errors.append(f"{path}: {instance} above maximum {schema['maximum']}")
     return errors
@@ -141,6 +146,12 @@ STORY_PIPELINE = [
     ("story-draft", "story-forge"),
     ("story-critic", "story-forge"),
     ("finalize", "orchestrator"),
+    ("entity-bibles", "story-forge"),
+    ("visual-bible", "story-forge"),
+    ("scene-planning", "story-forge"),
+    ("scene-critic", "story-forge"),
+    ("image-prompts", "story-forge"),
+    ("package", "orchestrator"),
 ]
 
 
@@ -174,12 +185,16 @@ def cmd_create(args):
     pdir = PROJECTS_DIR / project_id
     for sub in PROJECT_SUBDIRS:
         (pdir / sub).mkdir(parents=True, exist_ok=True)
+    style_preset = ROOT / "config" / "visual-style.json"
+    if style_preset.exists():
+        save_json(pdir / "context" / "style-preset.json", load_json(style_preset))
     project = {
         "id": project_id,
         "request": args.request,
         "created": now(),
         "status": "in_progress",
         "rewrite_rounds": 0,
+        "scene_fix_rounds": 0,
         "stages": [
             {"id": sid, "module": mod, "status": "pending", "attempts": 0}
             for sid, mod in STORY_PIPELINE
@@ -202,27 +217,66 @@ def invoke_module_stage(module, stage_def, pdir, extra_context=""):
     prompt = f"{stage_def['command']} {pdir.resolve()}"
     if extra_context:
         prompt += f"\n\n{extra_context}"
-    print(f"  → claude -p \"{stage_def['command']} …\"  (in {module['name']}/)")
-    result = subprocess.run(
+    started = time.monotonic()
+    print(f"  → claude -p \"{stage_def['command']} …\"  (in {module['name']}/)  started at {now()}", flush=True)
+    proc = subprocess.Popen(
         ["claude", "--permission-mode", "acceptEdits",
          "--add-dir", str(pdir.resolve()), "-p", prompt],
-        cwd=module["_dir"], capture_output=True, text=True, timeout=CLAUDE_TIMEOUT,
+        cwd=module["_dir"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    if result.returncode != 0:
-        return f"claude exited {result.returncode}: {result.stderr.strip()[:500]}"
+    next_beat = HEARTBEAT_SECONDS
+    while True:
+        try:
+            wait = max(1, min(next_beat - (time.monotonic() - started), 30))
+            _, stderr = proc.communicate(timeout=wait)
+            break
+        except subprocess.TimeoutExpired:
+            elapsed = time.monotonic() - started
+            if elapsed >= CLAUDE_TIMEOUT:
+                proc.kill()
+                proc.communicate()
+                return f"stage timed out after {CLAUDE_TIMEOUT}s"
+            if elapsed >= next_beat:
+                print(f"    … still running ({int(elapsed)}s elapsed)", flush=True)
+                next_beat += HEARTBEAT_SECONDS
+    if proc.returncode != 0:
+        return f"claude exited {proc.returncode}: {stderr.strip()[:500]}"
     return None
 
 
-def validate_stage_output(stage_def, pdir):
-    """Validate the stage's primary output file against its schema."""
-    out_path = pdir / stage_def["writes"][0]
-    if not out_path.exists():
-        return [f"expected output {stage_def['writes'][0]} was not written"]
+def _check_output_file(path, schema_name, pdir):
+    rel = path.relative_to(pdir) if path.is_absolute() else path
+    if not path.exists():
+        return [f"expected output {rel} was not written"]
     try:
-        data = load_json(out_path)
+        data = load_json(path)
     except json.JSONDecodeError as e:
-        return [f"{stage_def['writes'][0]} is not valid JSON: {e}"]
-    return validate(data, load_schema(stage_def["schema"]))
+        return [f"{rel} is not valid JSON: {e}"]
+    if not schema_name:
+        return []
+    return [f"{rel} {e}" for e in validate(data, load_schema(schema_name))]
+
+
+def validate_stage_output(stage_def, pdir):
+    """Validate every declared output. A stage may give per-write 'schemas'
+    (parallel to 'writes'); otherwise 'schema' applies to the first write
+    only. A write containing '*' is a glob: at least one match required,
+    every match validated."""
+    writes = stage_def["writes"]
+    schemas = stage_def.get("schemas")
+    if not schemas:
+        schemas = [stage_def["schema"]] + [None] * (len(writes) - 1)
+    errors = []
+    for rel, schema_name in zip(writes, schemas):
+        if "*" in rel:
+            matches = sorted(pdir.glob(rel))
+            if not matches:
+                errors.append(f"no files match expected output {rel}")
+            for m in matches:
+                errors.extend(_check_output_file(m, schema_name, pdir))
+        else:
+            errors.extend(_check_output_file(pdir / rel, schema_name, pdir))
+    return errors
 
 
 def run_module_stage(project, stage, modules, extra_context=""):
@@ -276,6 +330,85 @@ def run_finalize(project):
     return []
 
 
+def run_package(project):
+    """Deterministic: verify counts line up and write the package manifest
+    that image-forge consumes."""
+    pdir = PROJECTS_DIR / project["id"]
+    direction = load_json(pdir / "context" / "creative-direction.json")
+    final = load_json(pdir / "story" / "final.json")
+    scenes = sorted(p.relative_to(pdir) for p in (pdir / "scenes").glob("scene-*.json"))
+    prompts = sorted(p.relative_to(pdir) for p in (pdir / "prompts").glob("prompt-*.json"))
+    errors = []
+    if len(scenes) != direction["scene_count"]:
+        errors.append(f"scene count {len(scenes)} != planned {direction['scene_count']}")
+    if len(prompts) != len(scenes):
+        errors.append(f"prompt count {len(prompts)} != scene count {len(scenes)}")
+    for i, (s, p) in enumerate(zip(scenes, prompts), start=1):
+        if load_json(pdir / s)["scene_number"] != i:
+            errors.append(f"{s}: scene_number != {i}")
+        if load_json(pdir / p)["scene_number"] != i:
+            errors.append(f"{p}: scene_number != {i}")
+    if errors:
+        return errors
+    package = {
+        "project_id": project["id"],
+        "request": project["request"],
+        "title": final["title"],
+        "generated": now(),
+        "scene_count": len(scenes),
+        "files": {
+            "story": "story/final.json",
+            "visual_bible": "context/visual-bible.json",
+            "bibles": ["context/character-bible.json", "context/animal-bible.json",
+                       "context/object-bible.json", "context/location-bible.json"],
+            "scenes": [str(s) for s in scenes],
+            "prompts": [str(p) for p in prompts],
+            "continuity_state": "context/continuity-state.json",
+        },
+        "next_module": "image-forge",
+    }
+    errors = validate(package, load_schema("package.schema.json"))
+    if errors:
+        return errors
+    save_json(pdir / "reports" / "package.json", package)
+    return []
+
+
+ORCHESTRATOR_STAGES = {"finalize": run_finalize, "package": run_package}
+
+
+def scene_gate(project, modules):
+    """After scene-critic passes validation: verdict fail -> regenerate only
+    the failed scenes (bounded), then re-critique."""
+    pdir = PROJECTS_DIR / project["id"]
+    critic_stage = next(s for s in project["stages"] if s["id"] == "scene-critic")
+    while True:
+        critique = load_json(pdir / "reports" / "scene-critique.json")
+        if critique["verdict"] == "pass":
+            return True
+        failed = [s["scene_number"] for s in critique["scenes"] if s["verdict"] == "fail"]
+        if project["scene_fix_rounds"] >= MAX_SCENE_FIX_ROUNDS:
+            project["status"] = "needs_human"
+            critic_stage["notes"] = f"scenes {failed} still failing after {MAX_SCENE_FIX_ROUNDS} fix rounds"
+            save_project(project)
+            print(f"  ✗ scenes {failed} failed the gate after {MAX_SCENE_FIX_ROUNDS} fix rounds — needs human review")
+            return False
+        project["scene_fix_rounds"] += 1
+        save_project(project)
+        print(f"  ↻ scene gate: fail on scenes {failed} — fix round {project['scene_fix_rounds']}")
+        fix = {"id": "scene-fix", "module": "story-forge", "status": "pending", "attempts": 0}
+        if not run_module_stage(project, fix, modules):
+            project["status"] = "failed"
+            save_project(project)
+            return False
+        critic_stage.update({"status": "pending", "attempts": 0})
+        save_project(project)
+        if not run_module_stage(project, critic_stage, modules):
+            project["status"] = "failed"
+            save_project(project)
+            return False
+
+
 def critic_gate(project, modules):
     """After story-critic passes validation, apply the quality gate:
     verdict fail -> bounded rewrite loop (story-rewrite + re-critique)."""
@@ -322,9 +455,22 @@ def apply_input_mode(project):
         print(f"  • input mode '{analysis['mode']}'")
 
 
+def reconcile_stages(project):
+    """Bring an older project's stage list up to the current pipeline:
+    newly added stages are appended as pending, existing state is kept."""
+    existing = {s["id"]: s for s in project["stages"]}
+    project["stages"] = [
+        existing.get(sid, {"id": sid, "module": mod, "status": "pending", "attempts": 0})
+        for sid, mod in STORY_PIPELINE
+    ]
+    project.setdefault("scene_fix_rounds", 0)
+    save_project(project)
+
+
 def run_pipeline(project_id, only_stage=None):
     modules = discover_modules()
     project = load_project(project_id)
+    reconcile_stages(project)
     for stage in project["stages"]:
         if only_stage and stage["id"] != only_stage:
             continue
@@ -334,7 +480,8 @@ def run_pipeline(project_id, only_stage=None):
             stage.update({"status": "pending", "attempts": 0})
         print(f"[{project_id}] stage: {stage['id']}")
         if stage["module"] == "orchestrator":
-            errors = run_finalize(project) if stage["id"] == "finalize" else [f"unknown orchestrator stage {stage['id']}"]
+            runner = ORCHESTRATOR_STAGES.get(stage["id"])
+            errors = runner(project) if runner else [f"unknown orchestrator stage {stage['id']}"]
             stage["status"] = "failed" if errors else "passed"
             stage["attempts"] += 1
             stage["last_run"] = now()
@@ -353,6 +500,9 @@ def run_pipeline(project_id, only_stage=None):
                 apply_input_mode(project)
             if stage["id"] == "story-critic" and not only_stage:
                 if not critic_gate(project, modules):
+                    return
+            if stage["id"] == "scene-critic" and not only_stage:
+                if not scene_gate(project, modules):
                     return
         if stage["status"] == "failed":
             project["status"] = "failed"

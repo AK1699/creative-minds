@@ -1,0 +1,12 @@
+{
+  "name": "vintage-watercolor-storybook",
+  "medium": "watercolor illustration",
+  "rendering": "soft watercolor rendering, emotionally expressive but restrained",
+  "palette_direction": "muted earthy colours",
+  "paper_texture": "light beige textured paper",
+  "illustration_style": "minimal vintage storybook aesthetic",
+  "caption_typography": "handwritten-looking floating captions, no speech bubbles",
+  "aspect_ratio": "9:16",
+  "composition": "cinematic composition, vertical short-form video framing",
+  "never": ["speech bubbles", "photorealism", "harsh saturated colours", "text inside the illustration"]
+}

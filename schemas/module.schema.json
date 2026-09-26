@@ -18,8 +18,9 @@
           "id": { "type": "string" },
           "command": { "type": "string", "description": "Claude Code slash command invoked headlessly in the module directory" },
           "reads": { "type": "array", "items": { "type": "string" }, "description": "Project-relative input files" },
-          "writes": { "type": "array", "items": { "type": "string" }, "description": "Project-relative output files; first entry is the validated primary output" },
-          "schema": { "type": "string", "description": "Schema filename in creative-minds/schemas/ that the primary output must satisfy" }
+          "writes": { "type": "array", "items": { "type": "string" }, "description": "Project-relative output files; '*' entries are globs (at least one match required, every match validated)" },
+          "schema": { "type": "string", "description": "Schema filename in creative-minds/schemas/ that the first output must satisfy" },
+          "schemas": { "type": "array", "items": { "type": "string" }, "description": "Optional per-write schema filenames, parallel to 'writes'; overrides 'schema'" }
         }
       }
     }

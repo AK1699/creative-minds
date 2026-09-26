@@ -1,0 +1,74 @@
+{
+  "$id": "scene.schema.json",
+  "title": "Scene",
+  "description": "scenes/scene-NNN.json — one scene of the continuous visual sequence. References bible entries by id; never reinvents their attributes.",
+  "type": "object",
+  "required": [
+    "scene_number", "duration_seconds", "narrative_purpose", "emotional_purpose",
+    "location", "time_of_day", "weather", "characters", "animals", "objects",
+    "actions", "camera", "caption", "continuity"
+  ],
+  "properties": {
+    "scene_number": { "type": "integer", "minimum": 1 },
+    "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "narrative_purpose": { "type": "string" },
+    "emotional_purpose": { "type": "string" },
+    "location": { "type": "string", "description": "Location bible id" },
+    "time_of_day": { "type": "string" },
+    "weather": { "type": "string" },
+    "characters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "state", "expression"],
+        "properties": {
+          "id": { "type": "string", "description": "Character bible id" },
+          "state": { "type": "string", "description": "What they are doing / their condition in this scene" },
+          "expression": { "type": "string" }
+        }
+      }
+    },
+    "animals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "behaviour"],
+        "properties": {
+          "id": { "type": "string", "description": "Animal bible id" },
+          "behaviour": { "type": "string" }
+        }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "state"],
+        "properties": {
+          "id": { "type": "string", "description": "Object bible id" },
+          "state": { "type": "string", "description": "Condition/placement in this scene, consistent with the bible's state_changes" }
+        }
+      }
+    },
+    "actions": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "camera": {
+      "type": "object",
+      "required": ["shot", "angle", "composition"],
+      "properties": {
+        "shot": { "type": "string" },
+        "angle": { "type": "string" },
+        "composition": { "type": "string" }
+      }
+    },
+    "visual_metaphor": { "type": "string" },
+    "caption": { "type": "string", "description": "May be empty — not every scene needs text" },
+    "continuity": {
+      "type": "object",
+      "required": ["carries_from_previous", "must_match"],
+      "properties": {
+        "carries_from_previous": { "type": "string", "description": "What state this scene inherits from the previous scene" },
+        "must_match": { "type": "array", "items": { "type": "string" }, "description": "Bible attributes and prior-scene facts this scene must not contradict" }
+      }
+    }
+  }
+}

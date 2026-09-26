@@ -1,0 +1,27 @@
+{
+  "$id": "package.schema.json",
+  "title": "Story package manifest",
+  "description": "reports/package.json — deterministic manifest of the finished story package. This is the entry point an external module (image-forge) consumes.",
+  "type": "object",
+  "required": ["project_id", "request", "title", "scene_count", "files", "next_module"],
+  "properties": {
+    "project_id": { "type": "string" },
+    "request": { "type": "string" },
+    "title": { "type": "string" },
+    "generated": { "type": "string" },
+    "scene_count": { "type": "integer", "minimum": 1 },
+    "files": {
+      "type": "object",
+      "required": ["story", "visual_bible", "bibles", "scenes", "prompts", "continuity_state"],
+      "properties": {
+        "story": { "type": "string" },
+        "visual_bible": { "type": "string" },
+        "bibles": { "type": "array", "items": { "type": "string" } },
+        "scenes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "prompts": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "continuity_state": { "type": "string" }
+      }
+    },
+    "next_module": { "type": "string" }
+  }
+}

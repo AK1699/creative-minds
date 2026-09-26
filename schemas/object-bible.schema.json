@@ -1,0 +1,37 @@
+{
+  "$id": "object-bible.schema.json",
+  "title": "Object bible",
+  "description": "context/object-bible.json — fixed visual identity of every story-significant object, including how its condition changes across the story.",
+  "type": "object",
+  "required": ["objects"],
+  "properties": {
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "shape", "colour", "condition", "role"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "shape": { "type": "string" },
+          "colour": { "type": "string" },
+          "condition": { "type": "string", "description": "Baseline condition at story start" },
+          "distinctive_marks": { "type": "string" },
+          "state_changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["scene_number", "change"],
+              "properties": {
+                "scene_number": { "type": "integer", "minimum": 1 },
+                "change": { "type": "string" }
+              }
+            },
+            "description": "Deliberate condition changes, keyed to the scene where they happen"
+          },
+          "role": { "type": "string" }
+        }
+      }
+    }
+  }
+}

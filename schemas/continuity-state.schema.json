@@ -1,0 +1,22 @@
+{
+  "$id": "continuity-state.schema.json",
+  "title": "Continuity state",
+  "description": "context/continuity-state.json — the evolving world state at the end of each scene, so any scene can be regenerated against the exact state it must inherit and hand on.",
+  "type": "object",
+  "required": ["timeline"],
+  "properties": {
+    "timeline": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["scene_number", "end_state", "changes_from_previous"],
+        "properties": {
+          "scene_number": { "type": "integer", "minimum": 1 },
+          "end_state": { "type": "string", "description": "World state when the scene ends: who/what is where, object conditions, time, weather, light" },
+          "changes_from_previous": { "type": "string" }
+        }
+      }
+    }
+  }
+}

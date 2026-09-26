@@ -1,0 +1,26 @@
+{
+  "$id": "location-bible.schema.json",
+  "title": "Location bible",
+  "description": "context/location-bible.json — fixed identity of every location: architecture, geography, lighting, season. Scenes must not reinvent these.",
+  "type": "object",
+  "required": ["locations"],
+  "properties": {
+    "locations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "description", "lighting", "season"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "description": "Architecture, furniture, geography — the fixed physical facts" },
+          "lighting": { "type": "string" },
+          "season": { "type": "string" },
+          "weather_default": { "type": "string" },
+          "time_variants": { "type": "string", "description": "How the location reads at the different times of day the story uses" }
+        }
+      }
+    }
+  }
+}

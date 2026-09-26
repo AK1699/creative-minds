@@ -1,0 +1,26 @@
+{
+  "$id": "animal-bible.schema.json",
+  "title": "Animal bible",
+  "description": "context/animal-bible.json — fixed visual identity of every animal. Empty array when the story has no animals.",
+  "type": "object",
+  "required": ["animals"],
+  "properties": {
+    "animals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "species", "size", "markings", "role"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "species": { "type": "string" },
+          "size": { "type": "string" },
+          "markings": { "type": "string" },
+          "coat": { "type": "string", "description": "Fur/feather colour and texture" },
+          "distinctive_features": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      }
+    }
+  }
+}

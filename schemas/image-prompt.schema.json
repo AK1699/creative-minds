@@ -1,0 +1,28 @@
+{
+  "$id": "image-prompt.schema.json",
+  "title": "Image prompt",
+  "description": "prompts/prompt-NNN.json — one self-contained generation request per scene. An external image-generation module must be able to consume this file alone, without reading the story, scenes, or bibles.",
+  "type": "object",
+  "required": [
+    "scene_number", "prompt", "negative_prompt", "aspect_ratio",
+    "caption", "continuity_anchors", "source_scene"
+  ],
+  "properties": {
+    "scene_number": { "type": "integer", "minimum": 1 },
+    "prompt": {
+      "type": "string",
+      "description": "Complete positive prompt: subject + action + expression + setting + time/weather/light + camera + full visual style. All bible attributes embedded verbatim — no references."
+    },
+    "negative_prompt": { "type": "string" },
+    "aspect_ratio": { "type": "string" },
+    "caption": { "type": "string", "description": "Caption text for downstream overlay (empty if none); the image itself must contain no text" },
+    "caption_style": { "type": "string" },
+    "continuity_anchors": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "The exact visual facts that must match neighbouring scenes — usable by an image module to validate or regenerate"
+    },
+    "source_scene": { "type": "string", "description": "Project-relative path to the scene file this prompt was derived from" }
+  }
+}
