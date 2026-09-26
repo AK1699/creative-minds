@@ -19,6 +19,7 @@ import argparse
 import datetime
 import json
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -152,6 +153,7 @@ STORY_PIPELINE = [
     ("scene-critic", "story-forge"),
     ("image-prompts", "story-forge"),
     ("package", "orchestrator"),
+    ("generate-images", "image-forge"),
 ]
 
 
@@ -214,15 +216,21 @@ def cmd_create(args):
 
 def invoke_module_stage(module, stage_def, pdir, extra_context=""):
     """Run one creative stage headlessly in the module's own directory."""
-    prompt = f"{stage_def['command']} {pdir.resolve()}"
-    if extra_context:
-        prompt += f"\n\n{extra_context}"
+    if stage_def.get("type") == "exec":
+        cmd = shlex.split(stage_def["command"]) + [str(pdir.resolve())]
+        label = stage_def["command"]
+    else:
+        prompt = f"{stage_def['command']} {pdir.resolve()}"
+        if extra_context:
+            prompt += f"\n\n{extra_context}"
+        cmd = ["claude", "--permission-mode", "acceptEdits",
+               "--add-dir", str(pdir.resolve()), "-p", prompt]
+        label = f"claude -p \"{stage_def['command']} …\""
     started = time.monotonic()
-    print(f"  → claude -p \"{stage_def['command']} …\"  (in {module['name']}/)  started at {now()}", flush=True)
+    print(f"  → {label}  (in {module['name']}/)  started at {now()}", flush=True)
     proc = subprocess.Popen(
-        ["claude", "--permission-mode", "acceptEdits",
-         "--add-dir", str(pdir.resolve()), "-p", prompt],
-        cwd=module["_dir"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cmd, cwd=module["_dir"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     next_beat = HEARTBEAT_SECONDS
     while True:
@@ -240,7 +248,7 @@ def invoke_module_stage(module, stage_def, pdir, extra_context=""):
                 print(f"    … still running ({int(elapsed)}s elapsed)", flush=True)
                 next_beat += HEARTBEAT_SECONDS
     if proc.returncode != 0:
-        return f"claude exited {proc.returncode}: {stderr.strip()[:500]}"
+        return f"stage command exited {proc.returncode}: {stderr.strip()[:500]}"
     return None
 
 

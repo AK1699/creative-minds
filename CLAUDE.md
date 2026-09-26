@@ -85,10 +85,19 @@ self-contained image prompts → deterministic package assembly. The package,
 `reports/package.json`, is the designed boundary between story-forge and
 image-forge: visual bible, per-scene prompts, camera/lighting, embedded bible
 references, and regeneration rules are all inlined, so image-forge consumes
-this single file and never reads story-forge internal state. story-forge
-is the only active module; image/voice/music/video-forge are empty stubs;
-visual-forge is dormant (story-forge owns the visual bible per the spec). No
-image generation yet.
+this single file and never reads story-forge internal state. Source-of-truth
+rule (locked in the package schema): regeneration_rules > structured
+continuity references > scene constraints > image_prompt prose > model
+defaults — contradictions are logged and corrected deterministically, never
+resolved in favour of prose.
+
+image-forge is active as deterministic Python (stage type `exec`, no headless
+Claude): package validation → authority check → scene-by-scene generation
+behind an ImageProvider abstraction (mock provider only so far) → output +
+continuity validation → per-scene regeneration → `images/manifest.json` +
+`reports/image-package.json` for voice/music/video-forge. voice/music/
+video-forge are empty stubs; visual-forge is dormant (story-forge owns the
+visual bible per the spec). No real image provider connected yet.
 
 ## Submodule hygiene
 

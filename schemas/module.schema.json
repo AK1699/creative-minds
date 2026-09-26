@@ -16,7 +16,8 @@
         "required": ["id", "command", "reads", "writes", "schema"],
         "properties": {
           "id": { "type": "string" },
-          "command": { "type": "string", "description": "Claude Code slash command invoked headlessly in the module directory" },
+          "type": { "type": "string", "enum": ["claude", "exec"], "description": "claude (default): slash command run headlessly via claude -p. exec: deterministic command run directly in the module directory, project dir appended as final argument" },
+          "command": { "type": "string", "description": "Slash command (type claude) or shell command line (type exec)" },
           "reads": { "type": "array", "items": { "type": "string" }, "description": "Project-relative input files" },
           "writes": { "type": "array", "items": { "type": "string" }, "description": "Project-relative output files; '*' entries are globs (at least one match required, every match validated)" },
           "schema": { "type": "string", "description": "Schema filename in creative-minds/schemas/ that the first output must satisfy" },

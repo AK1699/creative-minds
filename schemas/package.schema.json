@@ -1,7 +1,7 @@
 {
   "$id": "package.schema.json",
   "title": "Story package — the Story Forge / Image Forge boundary contract",
-  "description": "reports/package.json — a fully self-contained handoff. Image Forge consumes this single file and must never read Story Forge's internal state (scenes/, prompts/, context/). Everything needed to generate, validate, and regenerate every image is embedded.",
+  "description": "reports/package.json — a fully self-contained handoff. Image Forge consumes this single file and must never read Story Forge's internal state (scenes/, prompts/, context/). Everything needed to generate, validate, and regenerate every image is embedded. SOURCE-OF-TRUTH RULE: image_prompt is optimised for generation but is NOT authoritative. On any conflict the authority hierarchy is (1) regeneration_rules, (2) structured continuity references (character/animal/object/location_reference, continuity_anchors), (3) scene constraints (camera, lighting, aspect_ratio, caption), (4) image_prompt prose, (5) image-model defaults. Consumers must never silently resolve a contradiction in favour of the prose prompt: log it, then correct deterministically or fail by severity.",
   "type": "object",
   "required": ["project_id", "story_id", "request", "title", "generated", "scene_count", "visual_bible", "scenes"],
   "properties": {

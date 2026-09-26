@@ -1,0 +1,35 @@
+{
+  "$id": "image-package.schema.json",
+  "title": "Image Forge package — the Image Forge / downstream boundary contract",
+  "description": "reports/image-package.json — the deterministic output manifest downstream modules (voice-forge, music-forge, video-forge) consume. Self-contained for assembly purposes: scene order, image files, captions, durations, aspect ratio. Full traceability lives in the image manifest it references.",
+  "type": "object",
+  "required": ["project_id", "story_id", "title", "generated", "scene_count", "aspect_ratio", "status", "images", "manifest", "next_modules"],
+  "properties": {
+    "project_id": { "type": "string" },
+    "story_id": { "type": "string" },
+    "title": { "type": "string" },
+    "generated": { "type": "string" },
+    "scene_count": { "type": "integer", "minimum": 1 },
+    "aspect_ratio": { "type": "string" },
+    "status": { "type": "string", "enum": ["pass", "fail"] },
+    "images": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["scene_id", "scene_number", "file", "caption", "duration_seconds", "validation_status"],
+        "properties": {
+          "scene_id": { "type": "string" },
+          "scene_number": { "type": "integer", "minimum": 1 },
+          "file": { "type": "string", "description": "Project-relative image path" },
+          "caption": { "type": "string" },
+          "caption_style": { "type": "string" },
+          "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+          "validation_status": { "type": "string", "enum": ["pass", "fail"] }
+        }
+      }
+    },
+    "manifest": { "type": "string", "description": "Project-relative path to the full image asset manifest" },
+    "next_modules": { "type": "array", "items": { "type": "string" } }
+  }
+}

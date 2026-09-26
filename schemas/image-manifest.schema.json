@@ -1,0 +1,78 @@
+{
+  "$id": "image-manifest.schema.json",
+  "title": "Image asset manifest",
+  "description": "images/manifest.json — full traceability record for every generated scene image. Internal to Image Forge's quality process; downstream modules consume image-package.schema.json instead.",
+  "type": "object",
+  "required": ["project_id", "story_id", "title", "generated", "provider", "model", "scene_count", "images"],
+  "properties": {
+    "project_id": { "type": "string" },
+    "story_id": { "type": "string" },
+    "title": { "type": "string" },
+    "generated": { "type": "string" },
+    "provider": { "type": "string" },
+    "model": { "type": "string" },
+    "scene_count": { "type": "integer", "minimum": 1 },
+    "images": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "scene_id", "scene_number", "file", "generation_id", "prompt_version",
+          "visual_bible_version", "provider", "model", "generated_at", "sha256",
+          "caption", "duration_seconds", "regeneration_count", "validation",
+          "continuity_validation"
+        ],
+        "properties": {
+          "scene_id": { "type": "string" },
+          "scene_number": { "type": "integer", "minimum": 1 },
+          "file": { "type": "string" },
+          "generation_id": { "type": "string" },
+          "prompt_version": { "type": "string" },
+          "visual_bible_version": { "type": "string" },
+          "provider": { "type": "string" },
+          "model": { "type": "string" },
+          "seed": { "type": "integer", "description": "Omitted/null when the provider does not support seeds" },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "sha256": { "type": "string" },
+          "generated_at": { "type": "string" },
+          "caption": { "type": "string" },
+          "caption_style": { "type": "string" },
+          "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+          "regeneration_rules": { "type": "object" },
+          "regeneration_count": { "type": "integer", "minimum": 0 },
+          "prompt_corrected": { "type": "boolean" },
+          "authority_issues": { "type": "array", "items": { "type": "object" } },
+          "validation": {
+            "type": "object",
+            "required": ["status", "checks"],
+            "properties": {
+              "status": { "type": "string", "enum": ["pass", "fail"] },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["check", "status"],
+                  "properties": {
+                    "check": { "type": "string" },
+                    "status": { "type": "string", "enum": ["pass", "fail"] },
+                    "detail": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "continuity_validation": {
+            "type": "object",
+            "required": ["status", "checks"],
+            "properties": {
+              "status": { "type": "string", "enum": ["pass", "fail"] },
+              "checks": { "type": "array", "items": { "type": "object" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
