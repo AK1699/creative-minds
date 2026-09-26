@@ -1,0 +1,3 @@
+[submodule "story-forge"]
+	path = story-forge
+	url = https://github.com/AK1699/story-forge.git
