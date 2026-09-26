@@ -1,0 +1,27 @@
+{
+  "$id": "concepts.schema.json",
+  "title": "Story concepts",
+  "description": "story/concepts.json — several genuinely distinct story concepts for the creative direction.",
+  "type": "object",
+  "required": ["concepts"],
+  "properties": {
+    "concepts": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "logline", "relationship", "conflict", "ending_mechanism", "why_original"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "logline": { "type": "string" },
+          "relationship": { "type": "string" },
+          "conflict": { "type": "string" },
+          "metaphor": { "type": "string" },
+          "ending_mechanism": { "type": "string" },
+          "why_original": { "type": "string", "description": "What separates this from the generic version of the same idea" }
+        }
+      }
+    }
+  }
+}

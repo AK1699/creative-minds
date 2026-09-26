@@ -1,0 +1,27 @@
+{
+  "$id": "module.schema.json",
+  "title": "Module manifest",
+  "description": "Contract a forge module declares at its root as module.json. The orchestrator discovers modules by scanning submodules for this file.",
+  "type": "object",
+  "required": ["name", "version", "stages"],
+  "properties": {
+    "name": { "type": "string" },
+    "version": { "type": "string" },
+    "description": { "type": "string" },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "command", "reads", "writes", "schema"],
+        "properties": {
+          "id": { "type": "string" },
+          "command": { "type": "string", "description": "Claude Code slash command invoked headlessly in the module directory" },
+          "reads": { "type": "array", "items": { "type": "string" }, "description": "Project-relative input files" },
+          "writes": { "type": "array", "items": { "type": "string" }, "description": "Project-relative output files; first entry is the validated primary output" },
+          "schema": { "type": "string", "description": "Schema filename in creative-minds/schemas/ that the primary output must satisfy" }
+        }
+      }
+    }
+  }
+}

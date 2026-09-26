@@ -1,0 +1,30 @@
+{
+  "$id": "story-draft.schema.json",
+  "title": "Story draft",
+  "description": "story/draft.json — a complete story draft. Rewrites overwrite this file with version incremented.",
+  "type": "object",
+  "required": ["version", "title", "logline", "narrative_structure", "beats", "story_text", "ending", "message"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string" },
+    "logline": { "type": "string" },
+    "narrative_structure": { "type": "string" },
+    "beats": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["beat", "summary", "emotional_purpose"],
+        "properties": {
+          "beat": { "type": "string" },
+          "summary": { "type": "string" },
+          "emotional_purpose": { "type": "string" },
+          "visual_storytelling": { "type": "string", "description": "How this beat communicates without dialogue where applicable: behaviour, silence, absence, symbolism, environment" }
+        }
+      }
+    },
+    "story_text": { "type": "string" },
+    "ending": { "type": "string" },
+    "message": { "type": "string", "description": "The earned meaning — must not be a generic motivational cliché" }
+  }
+}

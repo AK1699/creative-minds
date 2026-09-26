@@ -1,0 +1,29 @@
+{
+  "$id": "project.schema.json",
+  "title": "Project state",
+  "description": "projects/<id>/project.json — the authoritative pipeline state machine for one story project.",
+  "type": "object",
+  "required": ["id", "request", "created", "status", "stages"],
+  "properties": {
+    "id": { "type": "string" },
+    "request": { "type": "string", "description": "The high-level user request that started this project" },
+    "created": { "type": "string" },
+    "status": { "type": "string", "enum": ["in_progress", "complete", "failed", "needs_human"] },
+    "rewrite_rounds": { "type": "integer", "minimum": 0 },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "module", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "module": { "type": "string", "description": "Module name, or 'orchestrator' for deterministic stages" },
+          "status": { "type": "string", "enum": ["pending", "running", "passed", "failed", "skipped"] },
+          "attempts": { "type": "integer", "minimum": 0 },
+          "last_run": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

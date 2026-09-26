@@ -1,0 +1,29 @@
+{
+  "$id": "input-analysis.schema.json",
+  "title": "Input analysis (Context Analyzer)",
+  "description": "context/input-analysis.json — classifies the user's request and records which creative elements the user provided (locked) versus which Story Forge must fill (gaps). Downstream stages must never override locked elements.",
+  "type": "object",
+  "required": ["mode", "rationale", "provided", "locked", "gaps"],
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["auto", "idea", "story"],
+      "description": "auto: only constraints given, invent everything. idea: a premise/seed given, develop it. story: a substantive narrative given, preserve and complete it."
+    },
+    "rationale": { "type": "string" },
+    "provided": {
+      "type": "object",
+      "description": "Creative elements extractable from the request, keyed by element name (theme, emotion, relationship, characters, setting, conflict, metaphor, ending, premise, story_text, ...). Values are what the user gave, verbatim or lightly normalised."
+    },
+    "locked": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Element names from 'provided' that downstream stages must preserve, not reinvent"
+    },
+    "gaps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Element names Story Forge must decide itself"
+    }
+  }
+}

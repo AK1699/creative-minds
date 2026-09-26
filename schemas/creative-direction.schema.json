@@ -1,0 +1,45 @@
+{
+  "$id": "creative-direction.schema.json",
+  "title": "Creative direction",
+  "description": "context/creative-direction.json — the creative decisions derived from the user request. The relationship must emerge from the emotional meaning of the story, not from a template.",
+  "type": "object",
+  "required": [
+    "request", "audience", "theme", "emotional_tone", "primary_emotion",
+    "secondary_emotion", "relationship", "setting", "conflict",
+    "narrative_structure", "ending_mechanism", "duration_seconds", "scene_count", "pacing"
+  ],
+  "properties": {
+    "request": { "type": "string" },
+    "audience": { "type": "string" },
+    "theme": { "type": "string" },
+    "emotional_tone": { "type": "string" },
+    "primary_emotion": { "type": "string" },
+    "secondary_emotion": { "type": "string" },
+    "relationship": {
+      "type": "object",
+      "required": ["type", "participants", "rationale"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "human+human", "human+animal", "human+object", "human+place",
+            "human+memory", "human+reflection", "human+shadow",
+            "human+younger_self", "human+future_self",
+            "animal+animal", "object+object", "mixed"
+          ]
+        },
+        "participants": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "rationale": { "type": "string", "description": "Why this relationship serves the story's emotional meaning" }
+      }
+    },
+    "setting": { "type": "string" },
+    "conflict": { "type": "string" },
+    "metaphor": { "type": "string" },
+    "narrative_structure": { "type": "string" },
+    "ending_mechanism": { "type": "string" },
+    "duration_seconds": { "type": "integer", "minimum": 5 },
+    "scene_count": { "type": "integer", "minimum": 1 },
+    "pacing": { "type": "string" },
+    "notes": { "type": "string" }
+  }
+}

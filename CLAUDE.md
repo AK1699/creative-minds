@@ -1,7 +1,9 @@
 # creative-minds — Orchestrator
 
-creative-minds is a repo of repos. It orchestrates six specialist "forge" submodules
-through the Claude Code runtime to turn a creative brief into a finished video.
+creative-minds is the parent of the Creative Minds ecosystem: an AI-powered
+creative production system. Each capability lives in an independent git
+submodule (a "forge"); this repo owns orchestration, contracts, and project
+state — never creative implementation. Do not duplicate forge logic here.
 
 ## Architecture
 
@@ -9,52 +11,78 @@ through the Claude Code runtime to turn a creative brief into a finished video.
                         CREATIVE-MINDS
                              │
                     ┌────────┴────────┐
-                    │   Orchestrator  │
+                    │   Orchestrator  │   bin/creative-minds (deterministic Python)
                     └────────┬────────┘
                              │
-                    Claude Code runtime
+                    Claude Code runtime    (stages run as claude -p in each module)
                              │
          ┌───────────────────┼───────────────────┐
          ↓                   ↓                   ↓
-    STORY-FORGE         IMAGE-FORGE         VIDEO-FORGE
-         │                   │                   │
-         ↓                   ↓                   ↓
-      Story               Images              Video
+    STORY-FORGE         IMAGE-FORGE         VIDEO-FORGE   … voice, music
          │                   │                   │
          └───────────────────┼───────────────────┘
                              ↓
-                      Shared Context
+                     projects/<id>/          (shared context = project files)
 ```
 
-## Forges
+**AI does creative reasoning; code does everything else** — orchestration,
+state, validation, schemas, retries, file management. Project files are the
+single source of truth; conversational memory never is.
 
-| Submodule      | Role                                        | Output                         |
-| -------------- | ------------------------------------------- | ------------------------------ |
-| `story-forge`  | Narrative: script, scenes, shot list        | `shared-context/story/`        |
-| `visual-forge` | Visual direction: style, palette, storyboard| `shared-context/visuals/`      |
-| `image-forge`  | Still image generation per shot             | `shared-context/images/`       |
-| `voice-forge`  | Narration / dialogue audio                  | `shared-context/voice/`        |
-| `music-forge`  | Score and sound design                      | `shared-context/music/`        |
-| `video-forge`  | Final assembly: images + audio → video      | `shared-context/video/`        |
+## Layout
 
-## Pipeline
+- `bin/creative-minds` — orchestrator CLI (dependency-free Python 3)
+- `schemas/` — JSON schemas: the authoritative cross-module contracts
+- `projects/` — generated project state, one directory per story (gitignored)
+- `<forge>/` — submodules; a forge participates by declaring `module.json`
+  at its root (see `schemas/module.schema.json`)
 
-1. A project starts as a brief in `shared-context/brief.md`.
-2. **story-forge** turns the brief into a script and shot list.
-3. **visual-forge** defines the look (style guide, storyboard) from the story.
-4. **image-forge** generates stills for each shot, following the style guide.
-5. **voice-forge** and **music-forge** produce audio from the script (can run in parallel with image-forge).
-6. **video-forge** assembles images and audio into the final video.
+## Module contract
 
-Each forge reads its inputs from `shared-context/` and writes its outputs back
-there — forges never read from each other's repos directly. `shared-context/`
-is the only interface between stages.
+The orchestrator discovers modules by scanning submodules for `module.json`.
+Each stage declares: a slash command (run headlessly in the module's own
+directory with the project path as argument), the project files it reads, the
+files it writes, and the schema its primary output must satisfy. Modules only
+ever touch `projects/<id>/` paths named in their contract — never another
+module's repo. Adding a new forge requires no changes to existing forges.
 
-## Working in this repo
+## Project state
 
-- Each forge is a git submodule pinned to a commit. After committing inside a
-  forge, update the pin here: `git add <forge> && git commit`.
+`projects/STORY-NNNN/project.json` is the pipeline state machine
+(stage → pending/running/passed/failed, attempts, rewrite rounds). Subdirs:
+`context/ story/ scenes/ prompts/ images/ audio/ video/ reports/`.
+Every stage is resumable and individually re-runnable from disk state.
+
+## Usage
+
+```bash
+bin/creative-minds story create --auto "a 60-second emotional story for Gen-Z"
+bin/creative-minds story status STORY-0001
+bin/creative-minds story run STORY-0001          # resume pending stages
+bin/creative-minds story run-stage STORY-0001 story-draft   # rerun one stage
+bin/creative-minds modules
+bin/creative-minds validate STORY-0001 concepts
+```
+
+Quality gates: every stage output is schema-validated (bounded retries with
+the errors fed back). After `story-critic`, a `fail` verdict triggers a
+bounded rewrite loop (max 2 rounds) before the project is marked
+`needs_human`. `finalize` is deterministic — the orchestrator promotes the
+gate-passed draft to `story/final.json`.
+
+Input modes: the request can be a bare brief (`auto`), a premise (`idea`), or
+a full narrative (`story`). The `context-analyzer` stage classifies it and
+locks user-provided elements; in `story` mode the orchestrator skips
+concepts/select-concept and the draft preserves the user's narrative.
+
+## Current phase
+
+Phase 1: contracts + story pipeline through validated final story. story-forge
+is the only active module. image/voice/music/video-forge are empty stubs;
+visual-forge is dormant (story-forge owns the visual bible per the spec). No
+image generation yet.
+
+## Submodule hygiene
+
+- After committing inside a forge, update the pin here: `git add <forge> && git commit`.
 - Fresh clone: `git clone --recurse-submodules <url>`.
-- Pull latest across all forges: `git submodule update --remote --merge`.
-- The forges are currently empty scaffolds; this file defines the contract
-  they implement.

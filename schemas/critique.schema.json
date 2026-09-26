@@ -1,0 +1,39 @@
+{
+  "$id": "critique.schema.json",
+  "title": "Story critique (Story Quality Gate)",
+  "description": "story/critique.json — the critic's verdict on the current draft version. verdict=fail triggers a bounded rewrite loop in the orchestrator.",
+  "type": "object",
+  "required": ["draft_version", "verdict", "scores", "required_changes"],
+  "properties": {
+    "draft_version": { "type": "integer", "minimum": 1 },
+    "verdict": { "type": "string", "enum": ["pass", "fail"] },
+    "scores": {
+      "type": "object",
+      "required": [
+        "originality", "emotional_authenticity", "narrative_coherence",
+        "relationship_meaning", "cliche_avoidance", "ending_quality", "audience_relevance"
+      ],
+      "properties": {
+        "originality": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "emotional_authenticity": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "narrative_coherence": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "relationship_meaning": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "cliche_avoidance": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "ending_quality": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "audience_relevance": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "note"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor"] },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "required_changes": { "type": "array", "items": { "type": "string" }, "description": "Empty when verdict is pass" }
+  }
+}

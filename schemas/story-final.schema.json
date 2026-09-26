@@ -1,0 +1,19 @@
+{
+  "$id": "story-final.schema.json",
+  "title": "Final story",
+  "description": "story/final.json — the gate-passed draft, promoted deterministically by the orchestrator.",
+  "type": "object",
+  "required": ["version", "title", "logline", "narrative_structure", "beats", "story_text", "ending", "message", "approved", "critique_scores"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string" },
+    "logline": { "type": "string" },
+    "narrative_structure": { "type": "string" },
+    "beats": { "type": "array", "minItems": 3, "items": { "type": "object" } },
+    "story_text": { "type": "string" },
+    "ending": { "type": "string" },
+    "message": { "type": "string" },
+    "approved": { "type": "boolean" },
+    "critique_scores": { "type": "object" }
+  }
+}

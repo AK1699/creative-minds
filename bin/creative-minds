@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""creative-minds — orchestrator CLI for the Creative Minds ecosystem.
+
+Deterministic orchestration only: project lifecycle, pipeline state, module
+invocation, schema validation, bounded retries. All creative reasoning happens
+inside the forge modules (Claude Code, invoked headlessly). Project files are
+the single source of truth; nothing here relies on conversational memory.
+
+Usage:
+  creative-minds story create [--auto] "<high-level request>"
+  creative-minds story run <project-id>
+  creative-minds story run-stage <project-id> <stage-id>
+  creative-minds story status <project-id>
+  creative-minds modules
+  creative-minds validate <project-id> <stage-id>
+"""
+
+import argparse
+import datetime
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCHEMAS_DIR = ROOT / "schemas"
+PROJECTS_DIR = ROOT / "projects"
+
+MAX_STAGE_ATTEMPTS = 2   # invalid-output retries per stage
+MAX_REWRITE_ROUNDS = 2   # critic-fail -> rewrite loops per project
+CLAUDE_TIMEOUT = 900     # seconds per headless stage invocation
+
+
+# ---------------------------------------------------------------------------
+# Minimal JSON Schema validation (the subset our schemas use). Dependency-free
+# so the CLI runs on a bare python3. Supports: type, required, properties,
+# items, enum, minItems, minimum, maximum.
+# ---------------------------------------------------------------------------
+
+_TYPES = {
+    "object": dict, "array": list, "string": str,
+    "integer": int, "number": (int, float), "boolean": bool,
+}
+
+
+def validate(instance, schema, path="$"):
+    """Return a list of error strings; empty list means valid."""
+    errors = []
+    expected = schema.get("type")
+    if expected:
+        py_type = _TYPES[expected]
+        ok = isinstance(instance, py_type)
+        if expected in ("integer", "number") and isinstance(instance, bool):
+            ok = False
+        if not ok:
+            return [f"{path}: expected {expected}, got {type(instance).__name__}"]
+    if "enum" in schema and instance not in schema["enum"]:
+        errors.append(f"{path}: {instance!r} not in {schema['enum']}")
+    if isinstance(instance, dict):
+        for key in schema.get("required", []):
+            if key not in instance:
+                errors.append(f"{path}: missing required property '{key}'")
+        for key, subschema in schema.get("properties", {}).items():
+            if key in instance:
+                errors.extend(validate(instance[key], subschema, f"{path}.{key}"))
+    if isinstance(instance, list):
+        if "minItems" in schema and len(instance) < schema["minItems"]:
+            errors.append(f"{path}: has {len(instance)} items, minimum {schema['minItems']}")
+        if "items" in schema:
+            for i, item in enumerate(instance):
+                errors.extend(validate(item, schema["items"], f"{path}[{i}]"))
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool):
+        if "minimum" in schema and instance < schema["minimum"]:
+            errors.append(f"{path}: {instance} below minimum {schema['minimum']}")
+        if "maximum" in schema and instance > schema["maximum"]:
+            errors.append(f"{path}: {instance} above maximum {schema['maximum']}")
+    return errors
+
+
+def load_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def save_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def load_schema(name):
+    return load_json(SCHEMAS_DIR / name)
+
+
+def now():
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------------------
+# Module discovery
+# ---------------------------------------------------------------------------
+
+def discover_modules():
+    """Scan direct subdirectories for module.json manifests, validated."""
+    modules = {}
+    schema = load_schema("module.schema.json")
+    for manifest_path in sorted(ROOT.glob("*/module.json")):
+        manifest = load_json(manifest_path)
+        errors = validate(manifest, schema)
+        if errors:
+            die(f"invalid manifest {manifest_path}:\n  " + "\n  ".join(errors))
+        manifest["_dir"] = manifest_path.parent
+        modules[manifest["name"]] = manifest
+    return modules
+
+
+def get_stage_def(modules, module_name, stage_id):
+    for stage in modules[module_name]["stages"]:
+        if stage["id"] == stage_id:
+            return stage
+    die(f"module '{module_name}' has no stage '{stage_id}'")
+
+
+# ---------------------------------------------------------------------------
+# Project lifecycle
+# ---------------------------------------------------------------------------
+
+PROJECT_SUBDIRS = ["context", "story", "scenes", "prompts", "images", "audio", "video", "reports"]
+
+# The story pipeline: linear stages in order. story-rewrite is not listed —
+# it is injected by the critic gate loop. finalize is deterministic.
+# In input mode "story" the orchestrator skips concepts/select-concept:
+# the user supplied the narrative, so there is nothing to invent.
+STORY_PIPELINE = [
+    ("context-analyzer", "story-forge"),
+    ("creative-direction", "story-forge"),
+    ("concepts", "story-forge"),
+    ("select-concept", "story-forge"),
+    ("story-draft", "story-forge"),
+    ("story-critic", "story-forge"),
+    ("finalize", "orchestrator"),
+]
+
+
+def next_project_id():
+    PROJECTS_DIR.mkdir(exist_ok=True)
+    nums = [int(m.group(1)) for p in PROJECTS_DIR.iterdir()
+            if (m := re.fullmatch(r"STORY-(\d{4})", p.name))]
+    return f"STORY-{(max(nums, default=0) + 1):04d}"
+
+
+def project_dir(project_id):
+    d = PROJECTS_DIR / project_id
+    if not d.exists():
+        die(f"no such project: {project_id}")
+    return d
+
+
+def load_project(project_id):
+    return load_json(project_dir(project_id) / "project.json")
+
+
+def save_project(project):
+    save_json(PROJECTS_DIR / project["id"] / "project.json", project)
+
+
+def cmd_create(args):
+    modules = discover_modules()
+    if "story-forge" not in modules:
+        die("story-forge module not found (no story-forge/module.json)")
+    project_id = next_project_id()
+    pdir = PROJECTS_DIR / project_id
+    for sub in PROJECT_SUBDIRS:
+        (pdir / sub).mkdir(parents=True, exist_ok=True)
+    project = {
+        "id": project_id,
+        "request": args.request,
+        "created": now(),
+        "status": "in_progress",
+        "rewrite_rounds": 0,
+        "stages": [
+            {"id": sid, "module": mod, "status": "pending", "attempts": 0}
+            for sid, mod in STORY_PIPELINE
+        ],
+    }
+    save_project(project)
+    print(f"created {project_id}: {args.request}")
+    if args.auto:
+        run_pipeline(project_id)
+    else:
+        print(f"run it with: creative-minds story run {project_id}")
+
+
+# ---------------------------------------------------------------------------
+# Stage execution
+# ---------------------------------------------------------------------------
+
+def invoke_module_stage(module, stage_def, pdir, extra_context=""):
+    """Run one creative stage headlessly in the module's own directory."""
+    prompt = f"{stage_def['command']} {pdir.resolve()}"
+    if extra_context:
+        prompt += f"\n\n{extra_context}"
+    print(f"  → claude -p \"{stage_def['command']} …\"  (in {module['name']}/)")
+    result = subprocess.run(
+        ["claude", "--permission-mode", "acceptEdits", "-p", prompt],
+        cwd=module["_dir"], capture_output=True, text=True, timeout=CLAUDE_TIMEOUT,
+    )
+    if result.returncode != 0:
+        return f"claude exited {result.returncode}: {result.stderr.strip()[:500]}"
+    return None
+
+
+def validate_stage_output(stage_def, pdir):
+    """Validate the stage's primary output file against its schema."""
+    out_path = pdir / stage_def["writes"][0]
+    if not out_path.exists():
+        return [f"expected output {stage_def['writes'][0]} was not written"]
+    try:
+        data = load_json(out_path)
+    except json.JSONDecodeError as e:
+        return [f"{stage_def['writes'][0]} is not valid JSON: {e}"]
+    return validate(data, load_schema(stage_def["schema"]))
+
+
+def run_module_stage(project, stage, modules, extra_context=""):
+    """Invoke + validate one module stage, with bounded retries. Returns True on pass."""
+    pdir = PROJECTS_DIR / project["id"]
+    module = modules[stage["module"]]
+    stage_def = get_stage_def(modules, stage["module"], stage["id"])
+    errors_context = extra_context
+    while stage["attempts"] < MAX_STAGE_ATTEMPTS:
+        stage["attempts"] += 1
+        stage["status"] = "running"
+        stage["last_run"] = now()
+        save_project(project)
+        failure = invoke_module_stage(module, stage_def, pdir, errors_context)
+        errors = [failure] if failure else validate_stage_output(stage_def, pdir)
+        if not errors:
+            stage["status"] = "passed"
+            stage["notes"] = ""
+            save_project(project)
+            print(f"  ✓ {stage['id']} passed validation")
+            return True
+        stage["status"] = "failed"
+        stage["notes"] = "; ".join(errors)[:1000]
+        save_project(project)
+        print(f"  ✗ {stage['id']} attempt {stage['attempts']} failed:")
+        for e in errors:
+            print(f"      {e}")
+        errors_context = (
+            "IMPORTANT: your previous output failed validation with these errors. "
+            "Fix them and rewrite the output file:\n- " + "\n- ".join(errors)
+        )
+    return False
+
+
+def run_finalize(project):
+    """Deterministic: promote the gate-passed draft to story/final.json."""
+    pdir = PROJECTS_DIR / project["id"]
+    draft = load_json(pdir / "story" / "draft.json")
+    critique = load_json(pdir / "story" / "critique.json")
+    if critique["verdict"] != "pass":
+        return ["cannot finalize: latest critique verdict is 'fail'"]
+    if critique["draft_version"] != draft["version"]:
+        return [f"critique is for draft v{critique['draft_version']} but draft is v{draft['version']}"]
+    final = dict(draft)
+    final["approved"] = True
+    final["critique_scores"] = critique["scores"]
+    errors = validate(final, load_schema("story-final.schema.json"))
+    if errors:
+        return errors
+    save_json(pdir / "story" / "final.json", final)
+    return []
+
+
+def critic_gate(project, modules):
+    """After story-critic passes validation, apply the quality gate:
+    verdict fail -> bounded rewrite loop (story-rewrite + re-critique)."""
+    pdir = PROJECTS_DIR / project["id"]
+    critic_stage = next(s for s in project["stages"] if s["id"] == "story-critic")
+    while True:
+        critique = load_json(pdir / "story" / "critique.json")
+        if critique["verdict"] == "pass":
+            return True
+        if project["rewrite_rounds"] >= MAX_REWRITE_ROUNDS:
+            project["status"] = "needs_human"
+            critic_stage["notes"] = f"verdict still 'fail' after {MAX_REWRITE_ROUNDS} rewrites"
+            save_project(project)
+            print(f"  ✗ story failed the quality gate after {MAX_REWRITE_ROUNDS} rewrites — needs human review")
+            return False
+        project["rewrite_rounds"] += 1
+        save_project(project)
+        print(f"  ↻ critic verdict: fail — rewrite round {project['rewrite_rounds']}")
+        rewrite = {"id": "story-rewrite", "module": "story-forge", "status": "pending", "attempts": 0}
+        if not run_module_stage(project, rewrite, modules):
+            project["status"] = "failed"
+            save_project(project)
+            return False
+        critic_stage.update({"status": "pending", "attempts": 0})
+        save_project(project)
+        if not run_module_stage(project, critic_stage, modules):
+            project["status"] = "failed"
+            save_project(project)
+            return False
+
+
+def apply_input_mode(project):
+    """Deterministic branch on the analyzer's validated mode field:
+    a user-supplied story skips concept generation/selection entirely."""
+    analysis = load_json(PROJECTS_DIR / project["id"] / "context" / "input-analysis.json")
+    if analysis["mode"] == "story":
+        for stage in project["stages"]:
+            if stage["id"] in ("concepts", "select-concept") and stage["status"] == "pending":
+                stage["status"] = "skipped"
+                stage["notes"] = "input mode 'story': user supplied the narrative"
+        save_project(project)
+        print("  • input mode 'story' — skipping concepts and select-concept")
+    else:
+        print(f"  • input mode '{analysis['mode']}'")
+
+
+def run_pipeline(project_id, only_stage=None):
+    modules = discover_modules()
+    project = load_project(project_id)
+    for stage in project["stages"]:
+        if only_stage and stage["id"] != only_stage:
+            continue
+        if stage["status"] in ("passed", "skipped") and not only_stage:
+            continue
+        if only_stage:
+            stage.update({"status": "pending", "attempts": 0})
+        print(f"[{project_id}] stage: {stage['id']}")
+        if stage["module"] == "orchestrator":
+            errors = run_finalize(project) if stage["id"] == "finalize" else [f"unknown orchestrator stage {stage['id']}"]
+            stage["status"] = "failed" if errors else "passed"
+            stage["attempts"] += 1
+            stage["last_run"] = now()
+            stage["notes"] = "; ".join(errors)[:1000]
+            save_project(project)
+            if errors:
+                print(f"  ✗ {stage['id']}: " + "; ".join(errors))
+            else:
+                print(f"  ✓ {stage['id']}")
+        else:
+            if not run_module_stage(project, stage, modules):
+                project["status"] = "failed"
+                save_project(project)
+                die(f"stage {stage['id']} failed after {MAX_STAGE_ATTEMPTS} attempts")
+            if stage["id"] == "context-analyzer":
+                apply_input_mode(project)
+            if stage["id"] == "story-critic" and not only_stage:
+                if not critic_gate(project, modules):
+                    return
+        if stage["status"] == "failed":
+            project["status"] = "failed"
+            save_project(project)
+            die(f"stage {stage['id']} failed")
+    if not only_stage and all(s["status"] in ("passed", "skipped") for s in project["stages"]):
+        project["status"] = "complete"
+        save_project(project)
+        print(f"[{project_id}] pipeline complete — story/final.json is ready")
+
+
+# ---------------------------------------------------------------------------
+# Read-only commands
+# ---------------------------------------------------------------------------
+
+def cmd_status(args):
+    project = load_project(args.project_id)
+    print(f"{project['id']}  [{project['status']}]  rewrites: {project.get('rewrite_rounds', 0)}")
+    print(f"request: {project['request']}")
+    for s in project["stages"]:
+        mark = {"passed": "✓", "failed": "✗", "running": "…", "pending": "·", "skipped": "−"}[s["status"]]
+        line = f"  {mark} {s['id']:<20} {s['status']:<8} attempts={s.get('attempts', 0)}"
+        if s.get("notes"):
+            line += f"  ({s['notes'][:80]})"
+        print(line)
+
+
+def cmd_modules(_args):
+    modules = discover_modules()
+    if not modules:
+        print("no modules found")
+        return
+    for name, m in modules.items():
+        print(f"{name} v{m['version']} — {len(m['stages'])} stages: "
+              + ", ".join(s["id"] for s in m["stages"]))
+
+
+def cmd_validate(args):
+    modules = discover_modules()
+    project = load_project(args.project_id)
+    stage = next((s for s in project["stages"] if s["id"] == args.stage_id), None)
+    module_name = stage["module"] if stage else "story-forge"
+    stage_def = get_stage_def(modules, module_name, args.stage_id)
+    errors = validate_stage_output(stage_def, PROJECTS_DIR / args.project_id)
+    if errors:
+        print(f"✗ {args.stage_id} output invalid:")
+        for e in errors:
+            print(f"  {e}")
+        sys.exit(1)
+    print(f"✓ {args.stage_id} output valid against {stage_def['schema']}")
+
+
+def die(msg):
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="creative-minds")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    story = sub.add_parser("story", help="story project commands")
+    story_sub = story.add_subparsers(dest="story_cmd", required=True)
+
+    p = story_sub.add_parser("create", help="create a new story project")
+    p.add_argument("request", help="high-level creative request")
+    p.add_argument("--auto", action="store_true", help="run the full pipeline immediately")
+    p.set_defaults(func=cmd_create)
+
+    p = story_sub.add_parser("run", help="run all pending stages")
+    p.add_argument("project_id")
+    p.set_defaults(func=lambda a: run_pipeline(a.project_id))
+
+    p = story_sub.add_parser("run-stage", help="(re)run a single stage")
+    p.add_argument("project_id")
+    p.add_argument("stage_id")
+    p.set_defaults(func=lambda a: run_pipeline(a.project_id, only_stage=a.stage_id))
+
+    p = story_sub.add_parser("status", help="show pipeline state")
+    p.add_argument("project_id")
+    p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("modules", help="list discovered modules")
+    p.set_defaults(func=cmd_modules)
+
+    p = sub.add_parser("validate", help="validate a stage's output file")
+    p.add_argument("project_id")
+    p.add_argument("stage_id")
+    p.set_defaults(func=cmd_validate)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
