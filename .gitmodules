@@ -1,3 +1,18 @@
 [submodule "story-forge"]
 	path = story-forge
 	url = https://github.com/AK1699/story-forge.git
+[submodule "visual-forge"]
+	path = visual-forge
+	url = https://github.com/AK1699/visual-forge.git
+[submodule "image-forge"]
+	path = image-forge
+	url = https://github.com/AK1699/image-forge.git
+[submodule "voice-forge"]
+	path = voice-forge
+	url = https://github.com/AK1699/voice-forge.git
+[submodule "music-forge"]
+	path = music-forge
+	url = https://github.com/AK1699/music-forge.git
+[submodule "video-forge"]
+	path = video-forge
+	url = https://github.com/AK1699/video-forge.git
