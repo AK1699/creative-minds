@@ -204,7 +204,8 @@ def invoke_module_stage(module, stage_def, pdir, extra_context=""):
         prompt += f"\n\n{extra_context}"
     print(f"  → claude -p \"{stage_def['command']} …\"  (in {module['name']}/)")
     result = subprocess.run(
-        ["claude", "--permission-mode", "acceptEdits", "-p", prompt],
+        ["claude", "--permission-mode", "acceptEdits",
+         "--add-dir", str(pdir.resolve()), "-p", prompt],
         cwd=module["_dir"], capture_output=True, text=True, timeout=CLAUDE_TIMEOUT,
     )
     if result.returncode != 0:
