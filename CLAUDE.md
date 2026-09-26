@@ -81,8 +81,11 @@ Phase 3: full story-forge pipeline — story (gated) → entity bibles → visua
 bible (from the configurable `config/visual-style.json` preset, copied into
 each project at creation) → scene planning with captions and continuity state
 → scene/continuity gate (failed scenes regenerated individually, bounded) →
-self-contained image prompts → deterministic package manifest
-(`reports/package.json`), the entry point image-forge will consume. story-forge
+self-contained image prompts → deterministic package assembly. The package,
+`reports/package.json`, is the designed boundary between story-forge and
+image-forge: visual bible, per-scene prompts, camera/lighting, embedded bible
+references, and regeneration rules are all inlined, so image-forge consumes
+this single file and never reads story-forge internal state. story-forge
 is the only active module; image/voice/music/video-forge are empty stubs;
 visual-forge is dormant (story-forge owns the visual bible per the spec). No
 image generation yet.

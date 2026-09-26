@@ -331,38 +331,90 @@ def run_finalize(project):
 
 
 def run_package(project):
-    """Deterministic: verify counts line up and write the package manifest
-    that image-forge consumes."""
+    """Deterministic: assemble the self-contained Story Forge -> Image Forge
+    boundary contract. Image Forge consumes reports/package.json alone; every
+    bible entry, prompt, and regeneration rule is embedded so no Story Forge
+    internal state is ever read downstream."""
     pdir = PROJECTS_DIR / project["id"]
     direction = load_json(pdir / "context" / "creative-direction.json")
     final = load_json(pdir / "story" / "final.json")
-    scenes = sorted(p.relative_to(pdir) for p in (pdir / "scenes").glob("scene-*.json"))
-    prompts = sorted(p.relative_to(pdir) for p in (pdir / "prompts").glob("prompt-*.json"))
+    visual_bible = load_json(pdir / "context" / "visual-bible.json")
+    chars = {c["id"]: c for c in load_json(pdir / "context" / "character-bible.json")["characters"]}
+    animals = {a["id"]: a for a in load_json(pdir / "context" / "animal-bible.json")["animals"]}
+    objects = {o["id"]: o for o in load_json(pdir / "context" / "object-bible.json")["objects"]}
+    locations = {l["id"]: l for l in load_json(pdir / "context" / "location-bible.json")["locations"]}
+    scene_paths = sorted(p.relative_to(pdir) for p in (pdir / "scenes").glob("scene-*.json"))
+    prompt_paths = sorted(p.relative_to(pdir) for p in (pdir / "prompts").glob("prompt-*.json"))
+
     errors = []
-    if len(scenes) != direction["scene_count"]:
-        errors.append(f"scene count {len(scenes)} != planned {direction['scene_count']}")
-    if len(prompts) != len(scenes):
-        errors.append(f"prompt count {len(prompts)} != scene count {len(scenes)}")
-    for i, (s, p) in enumerate(zip(scenes, prompts), start=1):
-        if load_json(pdir / s)["scene_number"] != i:
-            errors.append(f"{s}: scene_number != {i}")
-        if load_json(pdir / p)["scene_number"] != i:
-            errors.append(f"{p}: scene_number != {i}")
+    if len(scene_paths) != direction["scene_count"]:
+        errors.append(f"scene count {len(scene_paths)} != planned {direction['scene_count']}")
+    if len(prompt_paths) != len(scene_paths):
+        errors.append(f"prompt count {len(prompt_paths)} != scene count {len(scene_paths)}")
     if errors:
         return errors
+
+    def ref(bible, entry_id, label):
+        entry = bible.get(entry_id)
+        if entry is None:
+            errors.append(f"{label} '{entry_id}' not found in its bible")
+        return entry
+
+    package_scenes = []
+    total = len(scene_paths)
+    for i, (spath, ppath) in enumerate(zip(scene_paths, prompt_paths), start=1):
+        scene = load_json(pdir / spath)
+        prompt = load_json(pdir / ppath)
+        if scene["scene_number"] != i:
+            errors.append(f"{spath}: scene_number != {i}")
+        if prompt["scene_number"] != i:
+            errors.append(f"{ppath}: scene_number != {i}")
+        location = ref(locations, scene["location"], f"{spath}: location")
+        lighting_bits = [scene["time_of_day"], scene["weather"]]
+        if location:
+            lighting_bits.append(location.get("lighting", ""))
+        neighbours = [f"scene-{n:03d}" for n in (i - 1, i + 1) if 1 <= n <= total]
+        package_scenes.append({
+            "scene_id": f"scene-{i:03d}",
+            "scene_number": i,
+            "duration_seconds": scene["duration_seconds"],
+            "image_prompt": prompt["prompt"],
+            "negative_prompt": prompt["negative_prompt"],
+            "caption": prompt["caption"],
+            "caption_style": prompt.get("caption_style", visual_bible["caption_typography"]),
+            "aspect_ratio": prompt["aspect_ratio"],
+            "camera": scene["camera"],
+            "lighting": ", ".join(b for b in lighting_bits if b),
+            "continuity_anchors": prompt["continuity_anchors"],
+            "character_references": [r for c in scene["characters"] if (r := ref(chars, c["id"], f"{spath}: character"))],
+            "animal_references": [r for a in scene["animals"] if (r := ref(animals, a["id"], f"{spath}: animal"))],
+            "object_references": [
+                {**r, "state_in_scene": o["state"]}
+                for o in scene["objects"] if (r := ref(objects, o["id"], f"{spath}: object"))
+            ],
+            "location_reference": location or {},
+            "regeneration_rules": {
+                "must_match": scene["continuity"]["must_match"],
+                "carries_from_previous": scene["continuity"]["carries_from_previous"],
+                "neighbours": neighbours,
+            },
+        })
+    if errors:
+        return errors
+
     package = {
         "project_id": project["id"],
+        "story_id": project["id"],
         "request": project["request"],
         "title": final["title"],
         "generated": now(),
-        "scene_count": len(scenes),
-        "files": {
+        "scene_count": total,
+        "visual_bible": visual_bible,
+        "scenes": package_scenes,
+        "sources": {
             "story": "story/final.json",
-            "visual_bible": "context/visual-bible.json",
-            "bibles": ["context/character-bible.json", "context/animal-bible.json",
-                       "context/object-bible.json", "context/location-bible.json"],
-            "scenes": [str(s) for s in scenes],
-            "prompts": [str(p) for p in prompts],
+            "scenes": [str(s) for s in scene_paths],
+            "prompts": [str(p) for p in prompt_paths],
             "continuity_state": "context/continuity-state.json",
         },
         "next_module": "image-forge",

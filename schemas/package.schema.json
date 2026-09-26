@@ -1,27 +1,73 @@
 {
   "$id": "package.schema.json",
-  "title": "Story package manifest",
-  "description": "reports/package.json — deterministic manifest of the finished story package. This is the entry point an external module (image-forge) consumes.",
+  "title": "Story package — the Story Forge / Image Forge boundary contract",
+  "description": "reports/package.json — a fully self-contained handoff. Image Forge consumes this single file and must never read Story Forge's internal state (scenes/, prompts/, context/). Everything needed to generate, validate, and regenerate every image is embedded.",
   "type": "object",
-  "required": ["project_id", "request", "title", "scene_count", "files", "next_module"],
+  "required": ["project_id", "story_id", "request", "title", "generated", "scene_count", "visual_bible", "scenes"],
   "properties": {
     "project_id": { "type": "string" },
+    "story_id": { "type": "string", "description": "Currently equals project_id; diverges if a project ever holds multiple stories" },
     "request": { "type": "string" },
     "title": { "type": "string" },
     "generated": { "type": "string" },
     "scene_count": { "type": "integer", "minimum": 1 },
-    "files": {
-      "type": "object",
-      "required": ["story", "visual_bible", "bibles", "scenes", "prompts", "continuity_state"],
-      "properties": {
-        "story": { "type": "string" },
-        "visual_bible": { "type": "string" },
-        "bibles": { "type": "array", "items": { "type": "string" } },
-        "scenes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-        "prompts": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-        "continuity_state": { "type": "string" }
+    "visual_bible": { "type": "object", "description": "The full visual bible, embedded (see visual-bible.schema.json)" },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "scene_id", "scene_number", "duration_seconds", "image_prompt",
+          "negative_prompt", "caption", "caption_style", "aspect_ratio",
+          "camera", "lighting", "continuity_anchors",
+          "character_references", "object_references", "regeneration_rules"
+        ],
+        "properties": {
+          "scene_id": { "type": "string" },
+          "scene_number": { "type": "integer", "minimum": 1 },
+          "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+          "image_prompt": { "type": "string", "description": "Complete, self-contained positive prompt" },
+          "negative_prompt": { "type": "string" },
+          "caption": { "type": "string", "description": "Overlay text for downstream modules; the image itself contains no text" },
+          "caption_style": { "type": "string" },
+          "aspect_ratio": { "type": "string" },
+          "camera": {
+            "type": "object",
+            "required": ["shot", "angle", "composition"],
+            "properties": {
+              "shot": { "type": "string" },
+              "angle": { "type": "string" },
+              "composition": { "type": "string" }
+            }
+          },
+          "lighting": { "type": "string", "description": "Time of day, weather, and the location's lighting character" },
+          "continuity_anchors": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "character_references": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "Full character-bible entries for every character in this scene, embedded"
+          },
+          "animal_references": { "type": "array", "items": { "type": "object" } },
+          "object_references": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "Full object-bible entries plus this scene's object state, embedded"
+          },
+          "location_reference": { "type": "object", "description": "Full location-bible entry, embedded" },
+          "regeneration_rules": {
+            "type": "object",
+            "required": ["must_match", "carries_from_previous", "neighbours"],
+            "properties": {
+              "must_match": { "type": "array", "items": { "type": "string" }, "description": "Facts a regenerated image must not contradict" },
+              "carries_from_previous": { "type": "string" },
+              "neighbours": { "type": "array", "items": { "type": "string" }, "description": "scene_ids whose images this one must stay visually continuous with" }
+            }
+          }
+        }
       }
     },
+    "sources": { "type": "object", "description": "Traceability only — project-relative paths of the files this package was assembled from. Image Forge must not read them." },
     "next_module": { "type": "string" }
   }
 }
