@@ -78,8 +78,9 @@ concepts/select-concept and the draft preserves the user's narrative.
 ## Current phase
 
 Phase 3: full story-forge pipeline — story (gated) → entity bibles → visual
-bible (from the configurable `config/visual-style.json` preset, copied into
-each project at creation) → scene planning with captions and continuity state
+bible (style preset copied into each project at creation: default
+`config/visual-style.json`, or one of the 145 presets in `config/styles.json`
+via `story create --style <slug>`; browse with `creative-minds styles`) → scene planning with captions and continuity state
 → scene/continuity gate (failed scenes regenerated individually, bounded) →
 self-contained image prompts → deterministic package assembly. The package,
 `reports/package.json`, is the designed boundary between story-forge and
