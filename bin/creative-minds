@@ -157,6 +157,49 @@ STORY_PIPELINE = [
 ]
 
 
+def load_style_library():
+    return load_json(ROOT / "config" / "styles.json")
+
+
+def resolve_style(slug):
+    """Layered merge: global defaults < category < style. 'never' lists are
+    concatenated. No slug -> the classic default preset (visual-style.json)."""
+    if not slug:
+        return load_json(ROOT / "config" / "visual-style.json")
+    lib = load_style_library()
+    style = lib["styles"].get(slug)
+    if style is None:
+        import difflib
+        hint = difflib.get_close_matches(slug, lib["styles"], n=3)
+        die(f"unknown style '{slug}'" + (f" — did you mean: {', '.join(hint)}?" if hint else "")
+            + "\nlist styles with: creative-minds styles")
+    category = lib["categories"].get(style.get("category", ""), {})
+    preset = dict(lib["defaults"])
+    for layer in (category, style):
+        for key, value in layer.items():
+            if key in ("label",):
+                continue
+            if key == "never":
+                preset["never"] = preset.get("never", []) + value
+            else:
+                preset[key] = value
+    preset["name"] = slug
+    return preset
+
+
+def cmd_styles(args):
+    lib = load_style_library()
+    by_cat = {}
+    for slug, style in lib["styles"].items():
+        by_cat.setdefault(style["category"], []).append((slug, style["best_for"]))
+    for cat, entries in by_cat.items():
+        print(f"\n{lib['categories'][cat]['label']}")
+        for slug, best in entries:
+            print(f"  {slug:<32} {best}")
+    print(f"\n{sum(len(v) for v in by_cat.values())} styles. "
+          "Use: creative-minds story create --style <name> \"...\"")
+
+
 def next_project_id():
     PROJECTS_DIR.mkdir(exist_ok=True)
     nums = [int(m.group(1)) for p in PROJECTS_DIR.iterdir()
@@ -187,9 +230,7 @@ def cmd_create(args):
     pdir = PROJECTS_DIR / project_id
     for sub in PROJECT_SUBDIRS:
         (pdir / sub).mkdir(parents=True, exist_ok=True)
-    style_preset = ROOT / "config" / "visual-style.json"
-    if style_preset.exists():
-        save_json(pdir / "context" / "style-preset.json", load_json(style_preset))
+    save_json(pdir / "context" / "style-preset.json", resolve_style(args.style))
     project = {
         "id": project_id,
         "request": args.request,
@@ -630,6 +671,7 @@ def main():
     p = story_sub.add_parser("create", help="create a new story project")
     p.add_argument("request", help="high-level creative request")
     p.add_argument("--auto", action="store_true", help="run the full pipeline immediately")
+    p.add_argument("--style", default=None, help="style slug from config/styles.json (see: creative-minds styles)")
     p.set_defaults(func=cmd_create)
 
     p = story_sub.add_parser("run", help="run all pending stages")
@@ -647,6 +689,9 @@ def main():
 
     p = sub.add_parser("modules", help="list discovered modules")
     p.set_defaults(func=cmd_modules)
+
+    p = sub.add_parser("styles", help="list the image style library")
+    p.set_defaults(func=cmd_styles)
 
     p = sub.add_parser("validate", help="validate a stage's output file")
     p.add_argument("project_id")
